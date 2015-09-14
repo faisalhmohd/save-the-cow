@@ -16956,6 +16956,156 @@ cr.behaviors.EightDir = function(runtime)
 }());
 ;
 ;
+cr.behaviors.Fade = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var behaviorProto = cr.behaviors.Fade.prototype;
+	behaviorProto.Type = function(behavior, objtype)
+	{
+		this.behavior = behavior;
+		this.objtype = objtype;
+		this.runtime = behavior.runtime;
+	};
+	var behtypeProto = behaviorProto.Type.prototype;
+	behtypeProto.onCreate = function()
+	{
+	};
+	behaviorProto.Instance = function(type, inst)
+	{
+		this.type = type;
+		this.behavior = type.behavior;
+		this.inst = inst;				// associated object instance to modify
+		this.runtime = type.runtime;
+	};
+	var behinstProto = behaviorProto.Instance.prototype;
+	behinstProto.onCreate = function()
+	{
+		var active_at_start = this.properties[0] === 1;
+		this.fadeInTime = this.properties[1];
+		this.waitTime = this.properties[2];
+		this.fadeOutTime = this.properties[3];
+		this.destroy = this.properties[4];			// 0 = no, 1 = after fade out
+		this.stage = active_at_start ? 0 : 3;		// 0 = fade in, 1 = wait, 2 = fade out, 3 = done
+		if (this.recycled)
+			this.stageTime.reset();
+		else
+			this.stageTime = new cr.KahanAdder();
+		this.maxOpacity = (this.inst.opacity ? this.inst.opacity : 1.0);
+		if (active_at_start)
+		{
+			if (this.fadeInTime === 0)
+			{
+				this.stage = 1;
+				if (this.waitTime === 0)
+					this.stage = 2;
+			}
+			else
+			{
+				this.inst.opacity = 0;
+				this.runtime.redraw = true;
+			}
+		}
+	};
+	behinstProto.saveToJSON = function ()
+	{
+		return {
+			"fit": this.fadeInTime,
+			"wt": this.waitTime,
+			"fot": this.fadeOutTime,
+			"s": this.stage,
+			"st": this.stageTime.sum,
+			"mo": this.maxOpacity,
+		};
+	};
+	behinstProto.loadFromJSON = function (o)
+	{
+		this.fadeInTime = o["fit"];
+		this.waitTime = o["wt"];
+		this.fadeOutTime = o["fot"];
+		this.stage = o["s"];
+		this.stageTime.reset();
+		this.stageTime.sum = o["st"];
+		this.maxOpacity = o["mo"];
+	};
+	behinstProto.tick = function ()
+	{
+		this.stageTime.add(this.runtime.getDt(this.inst));
+		if (this.stage === 0)
+		{
+			this.inst.opacity = (this.stageTime.sum / this.fadeInTime) * this.maxOpacity;
+			this.runtime.redraw = true;
+			if (this.inst.opacity >= this.maxOpacity)
+			{
+				this.inst.opacity = this.maxOpacity;
+				this.stage = 1;	// wait stage
+				this.stageTime.reset();
+			}
+		}
+		if (this.stage === 1)
+		{
+			if (this.stageTime.sum >= this.waitTime)
+			{
+				this.stage = 2;	// fade out stage
+				this.stageTime.reset();
+			}
+		}
+		if (this.stage === 2)
+		{
+			if (this.fadeOutTime !== 0)
+			{
+				this.inst.opacity = this.maxOpacity - ((this.stageTime.sum / this.fadeOutTime) * this.maxOpacity);
+				this.runtime.redraw = true;
+				if (this.inst.opacity < 0)
+				{
+					this.inst.opacity = 0;
+					this.stage = 3;	// done
+					this.stageTime.reset();
+					this.runtime.trigger(cr.behaviors.Fade.prototype.cnds.OnFadeOutEnd, this.inst);
+					if (this.destroy === 1)
+						this.runtime.DestroyInstance(this.inst);
+				}
+			}
+		}
+	};
+	behinstProto.doStart = function ()
+	{
+		this.stage = 0;
+		this.stageTime.reset();
+		if (this.fadeInTime === 0)
+		{
+			this.stage = 1;
+			if (this.waitTime === 0)
+				this.stage = 2;
+		}
+		else
+		{
+			this.inst.opacity = 0;
+			this.runtime.redraw = true;
+		}
+	};
+	function Cnds() {};
+	Cnds.prototype.OnFadeOutEnd = function ()
+	{
+		return true;
+	};
+	behaviorProto.cnds = new Cnds();
+	function Acts() {};
+	Acts.prototype.StartFade = function ()
+	{
+		if (this.stage === 3)
+			this.doStart();
+	};
+	Acts.prototype.RestartFade = function ()
+	{
+		this.doStart();
+	};
+	behaviorProto.acts = new Acts();
+}());
+;
+;
 cr.behaviors.bound = function(runtime)
 {
 	this.runtime = runtime;
@@ -17880,6 +18030,41 @@ cr.getProjectModel = function() { return [
 		false,
 		false,
 		4539656239303212,
+		[],
+		null
+	]
+,	[
+		"t18",
+		cr.plugins_.Sprite,
+		false,
+		[],
+		1,
+		0,
+		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			5880468237846598,
+			[
+				["images/sprite2-sheet0.png", 7321, 0, 0, 118, 101, 1, 0.5, 0.5049505233764648,[],[-0.3220338821411133,-0.2970297336578369,0,-0.485148549079895,0.3813559412956238,-0.3663366436958313,0.4067796468734741,-0.0099010169506073,0.3220338821411133,0.2871286869049072,0,0.4851484894752502,-0.3135593235492706,0.2772276997566223,-0.491525411605835,-0.0099010169506073],0]
+			]
+			]
+		],
+		[
+		[
+			"Fade",
+			cr.behaviors.Fade,
+			1960114250766133
+		]
+		],
+		false,
+		false,
+		4032557158903897,
 		[],
 		null
 	]
@@ -18906,6 +19091,28 @@ cr.getProjectModel = function() { return [
 					1
 				]
 			]
+,			[
+				[-277, 225, 0, 118, 101, 0, 0, 1, 0.5, 0.5049505233764648, 0, 0, []],
+				18,
+				1,
+				[
+				],
+				[
+				[
+					1,
+					0,
+					0,
+					1,
+					1
+				]
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
 			],
 			[			]
 		]
@@ -19579,14 +19786,80 @@ cr.getProjectModel = function() { return [
 				0,
 				cr.plugins_.Sprite.prototype.acts.Destroy,
 				null,
-				2698071078523465,
+				3275231319779881,
 				false
+			]
+,			[
+				0,
+				cr.plugins_.Sprite.prototype.acts.Spawn,
+				null,
+				7105819634428161,
+				false
+				,[
+				[
+					4,
+					18
+				]
+,				[
+					5,
+					[
+						2,
+						"Game"
+					]
+				]
+,				[
+					7,
+					[
+						0,
+						0
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.Wait,
+				null,
+				3935626074898723,
+				false
+				,[
+				[
+					0,
+					[
+						1,
+						1
+					]
+				]
+				]
+			]
+,			[
+				18,
+				cr.plugins_.Sprite.prototype.acts.Destroy,
+				null,
+				8494533520479065,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.Wait,
+				null,
+				6838575078083631,
+				false
+				,[
+				[
+					0,
+					[
+						1,
+						1
+					]
+				]
+				]
 			]
 ,			[
 				-1,
 				cr.system_object.prototype.acts.GoToLayout,
 				null,
-				9084013254779617,
+				7616133512384711,
 				false
 				,[
 				[
@@ -19826,6 +20099,127 @@ cr.getProjectModel = function() { return [
 						false,
 						null
 					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			3464971774442197,
+			[
+			[
+				17,
+				cr.plugins_.Sprite.prototype.cnds.OnCollision,
+				null,
+				0,
+				false,
+				false,
+				true,
+				8902762487176576,
+				false
+				,[
+				[
+					4,
+					0
+				]
+				]
+			]
+			],
+			[
+			[
+				17,
+				cr.plugins_.Sprite.prototype.acts.Destroy,
+				null,
+				6991904352949766,
+				false
+			]
+,			[
+				0,
+				cr.plugins_.Sprite.prototype.acts.Destroy,
+				null,
+				9239657944125666,
+				false
+			]
+,			[
+				0,
+				cr.plugins_.Sprite.prototype.acts.Spawn,
+				null,
+				4867768032612622,
+				false
+				,[
+				[
+					4,
+					18
+				]
+,				[
+					5,
+					[
+						2,
+						"Game"
+					]
+				]
+,				[
+					7,
+					[
+						0,
+						0
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.Wait,
+				null,
+				4662186813394978,
+				false
+				,[
+				[
+					0,
+					[
+						1,
+						1
+					]
+				]
+				]
+			]
+,			[
+				18,
+				cr.plugins_.Sprite.prototype.acts.Destroy,
+				null,
+				1257138187930135,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.Wait,
+				null,
+				8300551206102747,
+				false
+				,[
+				[
+					0,
+					[
+						1,
+						1
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.GoToLayout,
+				null,
+				5677946766537992,
+				false
+				,[
+				[
+					6,
+					"Score Screen"
 				]
 				]
 			]
