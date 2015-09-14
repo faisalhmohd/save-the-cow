@@ -19196,6 +19196,13 @@ cr.getProjectModel = function() { return [
 		"Game Events",
 		[
 		[
+			1,
+			"Score",
+			0,
+			0,
+false,false,2866061305080595,false
+		]
+,		[
 			0,
 			null,
 			false,
@@ -20246,6 +20253,45 @@ cr.getProjectModel = function() { return [
 				false,
 				false,
 				5644049088322931,
+				false
+			]
+			],
+			[
+			[
+				7,
+				cr.plugins_.Facebook.prototype.acts.LogIn,
+				null,
+				3666519425146415,
+				false
+				,[
+				[
+					3,
+					1
+				]
+,				[
+					3,
+					1
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			9087010633105095,
+			[
+			[
+				7,
+				cr.plugins_.Facebook.prototype.cnds.OnLogIn,
+				null,
+				1,
+				false,
+				false,
+				false,
+				7982162627311404,
 				false
 			]
 			],
