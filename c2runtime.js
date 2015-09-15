@@ -12962,6 +12962,283 @@ cr.system_object.prototype.loadFromJSON = function (o)
 cr.shaders = {};
 ;
 ;
+cr.plugins_.Button = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var pluginProto = cr.plugins_.Button.prototype;
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+	};
+	var typeProto = pluginProto.Type.prototype;
+	typeProto.onCreate = function()
+	{
+	};
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+	};
+	var instanceProto = pluginProto.Instance.prototype;
+	instanceProto.onCreate = function()
+	{
+		if (this.runtime.isDomFree)
+		{
+			cr.logexport("[Construct 2] Button plugin not supported on this platform - the object will not be created");
+			return;
+		}
+		this.isCheckbox = (this.properties[0] === 1);
+		this.inputElem = document.createElement("input");
+		if (this.isCheckbox)
+			this.elem = document.createElement("label");
+		else
+			this.elem = this.inputElem;
+		this.labelText = null;
+		this.inputElem.type = (this.isCheckbox ? "checkbox" : "button");
+		this.inputElem.id = this.properties[6];
+		jQuery(this.elem).appendTo(this.runtime.canvasdiv ? this.runtime.canvasdiv : "body");
+		if (this.isCheckbox)
+		{
+			jQuery(this.inputElem).appendTo(this.elem);
+			this.labelText = document.createTextNode(this.properties[1]);
+			jQuery(this.elem).append(this.labelText);
+			this.inputElem.checked = (this.properties[7] !== 0);
+			jQuery(this.elem).css("font-family", "sans-serif");
+			jQuery(this.elem).css("display", "inline-block");
+			jQuery(this.elem).css("color", "black");
+		}
+		else
+			this.inputElem.value = this.properties[1];
+		this.elem.title = this.properties[2];
+		this.inputElem.disabled = (this.properties[4] === 0);
+		this.autoFontSize = (this.properties[5] !== 0);
+		this.element_hidden = false;
+		if (this.properties[3] === 0)
+		{
+			jQuery(this.elem).hide();
+			this.visible = false;
+			this.element_hidden = true;
+		}
+		this.inputElem.onclick = (function (self) {
+			return function(e) {
+				e.stopPropagation();
+				self.runtime.isInUserInputEvent = true;
+				self.runtime.trigger(cr.plugins_.Button.prototype.cnds.OnClicked, self);
+				self.runtime.isInUserInputEvent = false;
+			};
+		})(this);
+		this.elem.addEventListener("touchstart", function (e) {
+			e.stopPropagation();
+		}, false);
+		this.elem.addEventListener("touchmove", function (e) {
+			e.stopPropagation();
+		}, false);
+		this.elem.addEventListener("touchend", function (e) {
+			e.stopPropagation();
+		}, false);
+		jQuery(this.elem).mousedown(function (e) {
+			e.stopPropagation();
+		});
+		jQuery(this.elem).mouseup(function (e) {
+			e.stopPropagation();
+		});
+		jQuery(this.elem).keydown(function (e) {
+			e.stopPropagation();
+		});
+		jQuery(this.elem).keyup(function (e) {
+			e.stopPropagation();
+		});
+		this.lastLeft = 0;
+		this.lastTop = 0;
+		this.lastRight = 0;
+		this.lastBottom = 0;
+		this.lastWinWidth = 0;
+		this.lastWinHeight = 0;
+		this.updatePosition(true);
+		this.runtime.tickMe(this);
+	};
+	instanceProto.saveToJSON = function ()
+	{
+		var o = {
+			"tooltip": this.elem.title,
+			"disabled": !!this.inputElem.disabled
+		};
+		if (this.isCheckbox)
+		{
+			o["checked"] = !!this.inputElem.checked;
+			o["text"] = this.labelText.nodeValue;
+		}
+		else
+		{
+			o["text"] = this.elem.value;
+		}
+		return o;
+	};
+	instanceProto.loadFromJSON = function (o)
+	{
+		this.elem.title = o["tooltip"];
+		this.inputElem.disabled = o["disabled"];
+		if (this.isCheckbox)
+		{
+			this.inputElem.checked = o["checked"];
+			this.labelText.nodeValue = o["text"];
+		}
+		else
+		{
+			this.elem.value = o["text"];
+		}
+	};
+	instanceProto.onDestroy = function ()
+	{
+		if (this.runtime.isDomFree)
+			return;
+		jQuery(this.elem).remove();
+		this.elem = null;
+	};
+	instanceProto.tick = function ()
+	{
+		this.updatePosition();
+	};
+	var last_canvas_offset = null;
+	var last_checked_tick = -1;
+	instanceProto.updatePosition = function (first)
+	{
+		if (this.runtime.isDomFree)
+			return;
+		var left = this.layer.layerToCanvas(this.x, this.y, true);
+		var top = this.layer.layerToCanvas(this.x, this.y, false);
+		var right = this.layer.layerToCanvas(this.x + this.width, this.y + this.height, true);
+		var bottom = this.layer.layerToCanvas(this.x + this.width, this.y + this.height, false);
+		if (!this.visible || !this.layer.visible || right <= 0 || bottom <= 0 || left >= this.runtime.width || top >= this.runtime.height)
+		{
+			if (!this.element_hidden)
+				jQuery(this.elem).hide();
+			this.element_hidden = true;
+			return;
+		}
+		if (left < 1)
+			left = 1;
+		if (top < 1)
+			top = 1;
+		if (right >= this.runtime.width)
+			right = this.runtime.width - 1;
+		if (bottom >= this.runtime.height)
+			bottom = this.runtime.height - 1;
+		var curWinWidth = window.innerWidth;
+		var curWinHeight = window.innerHeight;
+		if (!first && this.lastLeft === left && this.lastTop === top && this.lastRight === right && this.lastBottom === bottom && this.lastWinWidth === curWinWidth && this.lastWinHeight === curWinHeight)
+		{
+			if (this.element_hidden)
+			{
+				jQuery(this.elem).show();
+				this.element_hidden = false;
+			}
+			return;
+		}
+		this.lastLeft = left;
+		this.lastTop = top;
+		this.lastRight = right;
+		this.lastBottom = bottom;
+		this.lastWinWidth = curWinWidth;
+		this.lastWinHeight = curWinHeight;
+		if (this.element_hidden)
+		{
+			jQuery(this.elem).show();
+			this.element_hidden = false;
+		}
+		var offx = Math.round(left) + jQuery(this.runtime.canvas).offset().left;
+		var offy = Math.round(top) + jQuery(this.runtime.canvas).offset().top;
+		jQuery(this.elem).css("position", "absolute");
+		jQuery(this.elem).offset({left: offx, top: offy});
+		jQuery(this.elem).width(Math.round(right - left));
+		jQuery(this.elem).height(Math.round(bottom - top));
+		if (this.autoFontSize)
+			jQuery(this.elem).css("font-size", ((this.layer.getScale(true) / this.runtime.devicePixelRatio) - 0.2) + "em");
+	};
+	instanceProto.draw = function(ctx)
+	{
+	};
+	instanceProto.drawGL = function(glw)
+	{
+	};
+	function Cnds() {};
+	Cnds.prototype.OnClicked = function ()
+	{
+		return true;
+	};
+	Cnds.prototype.IsChecked = function ()
+	{
+		return this.isCheckbox && this.inputElem.checked;
+	};
+	pluginProto.cnds = new Cnds();
+	function Acts() {};
+	Acts.prototype.SetText = function (text)
+	{
+		if (this.runtime.isDomFree)
+			return;
+		if (this.isCheckbox)
+			this.labelText.nodeValue = text;
+		else
+			this.elem.value = text;
+	};
+	Acts.prototype.SetTooltip = function (text)
+	{
+		if (this.runtime.isDomFree)
+			return;
+		this.elem.title = text;
+	};
+	Acts.prototype.SetVisible = function (vis)
+	{
+		if (this.runtime.isDomFree)
+			return;
+		this.visible = (vis !== 0);
+	};
+	Acts.prototype.SetEnabled = function (en)
+	{
+		if (this.runtime.isDomFree)
+			return;
+		this.inputElem.disabled = (en === 0);
+	};
+	Acts.prototype.SetFocus = function ()
+	{
+		if (this.runtime.isDomFree)
+			return;
+		this.inputElem.focus();
+	};
+	Acts.prototype.SetBlur = function ()
+	{
+		if (this.runtime.isDomFree)
+			return;
+		this.inputElem.blur();
+	};
+	Acts.prototype.SetCSSStyle = function (p, v)
+	{
+		if (this.runtime.isDomFree)
+			return;
+		jQuery(this.elem).css(p, v);
+	};
+	Acts.prototype.SetChecked = function (c)
+	{
+		if (this.runtime.isDomFree || !this.isCheckbox)
+			return;
+		this.inputElem.checked = (c === 1);
+	};
+	Acts.prototype.ToggleChecked = function ()
+	{
+		if (this.runtime.isDomFree || !this.isCheckbox)
+			return;
+		this.inputElem.checked = !this.inputElem.checked;
+	};
+	pluginProto.acts = new Acts();
+	function Exps() {};
+	pluginProto.exps = new Exps();
+}());
+;
+;
 cr.plugins_.Facebook = function(runtime)
 {
 	this.runtime = runtime;
@@ -17359,6 +17636,18 @@ cr.getProjectModel = function() { return [
 	null,
 	[
 	[
+		cr.plugins_.Button,
+		false,
+		true,
+		true,
+		true,
+		false,
+		false,
+		false,
+		false,
+		false
+	]
+,	[
 		cr.plugins_.Facebook,
 		true,
 		false,
@@ -17383,18 +17672,6 @@ cr.getProjectModel = function() { return [
 		false
 	]
 ,	[
-		cr.plugins_.Sprite,
-		false,
-		true,
-		true,
-		true,
-		true,
-		true,
-		true,
-		true,
-		false
-	]
-,	[
 		cr.plugins_.Touch,
 		true,
 		false,
@@ -17404,6 +17681,18 @@ cr.getProjectModel = function() { return [
 		false,
 		false,
 		false,
+		false
+	]
+,	[
+		cr.plugins_.Sprite,
+		false,
+		true,
+		true,
+		true,
+		true,
+		true,
+		true,
+		true,
 		false
 	]
 	],
@@ -17696,7 +17985,7 @@ cr.getProjectModel = function() { return [
 			false,
 			1623953487555624,
 			[
-				["images/lungiguy2-sheet0.png", 30397, 0, 0, 166, 124, 1, 0.5, 0.5,[],[-0.3012048006057739,0.2338709831237793,-0.3734939694404602,0,-0.3855421543121338,-0.3467742204666138,0,-0.4838709831237793,0.2530120611190796,-0.1693548560142517,0.4879518151283264,0,0.3012048006057739,0.2338709831237793,0,0.4274193644523621],0]
+				["images/lungiguy2-sheet0.png", 30397, 0, 0, 166, 124, 1, 0.5, 0.5,[],[-0.3012049794197083,0.2338709831237793,-0.3734939992427826,0,-0.3855420053005219,-0.3467739820480347,0,-0.4838710129261017,0.2530120015144348,-0.1693550050258637,0.4879519939422607,0,0.3012049794197083,0.2338709831237793,0,0.4274190068244934],0]
 			]
 			]
 		],
@@ -17811,7 +18100,7 @@ cr.getProjectModel = function() { return [
 			false,
 			8032049765024454,
 			[
-				["images/treeleft-sheet0.png", 134643, 0, 0, 346, 304, 1, 0.5, 0.5,[],[0.3121387362480164,0.2861841917037964,0,0.4967105388641357,-0.3352600932121277,0.3125,-0.4508670568466187,0,-0.3381502628326416,-0.3157894611358643,0,-0.4769737124443054,0.3670520186424255,-0.3486841917037964,0.4450867176055908,0],0]
+				["images/treeleft-sheet0.png", 134643, 0, 0, 346, 304, 1, 0.5, 0.5,[],[0.3121389746665955,0.2861840128898621,0,0.496711015701294,-0.3352600038051605,0.3125,-0.4508671164512634,0,-0.3381499946117401,-0.3157889842987061,0,-0.4769737124443054,0.3670520186424255,-0.3486840128898621,0.4450870156288147,0],0]
 			]
 			]
 		],
@@ -17851,7 +18140,7 @@ cr.getProjectModel = function() { return [
 			false,
 			5454027430072205,
 			[
-				["images/treeright-sheet0.png", 134904, 0, 0, 346, 304, 1, 0.5, 0.5,[],[-0.3121387362480164,-0.2861841917037964,0,-0.4967105388641357,0.3352600932121277,-0.3125,0.4508670568466187,0,0.3381502628326416,0.3157894611358643,0,0.4769737124443054,-0.3670520186424255,0.3486841917037964,-0.4450867176055908,0],0]
+				["images/treeright-sheet0.png", 134904, 0, 0, 346, 304, 1, 0.5, 0.5,[],[-0.3121390044689179,-0.2861840128898621,0,-0.4967105388641357,0.3352599740028381,-0.3125,0.4508669972419739,0,0.3381500244140625,0.3157889842987061,0,0.4769740104675293,-0.3670520186424255,0.3486840128898621,-0.4450866878032684,0],0]
 			]
 			]
 		],
@@ -17891,7 +18180,7 @@ cr.getProjectModel = function() { return [
 			false,
 			3463655705400195,
 			[
-				["images/bush-sheet0.png", 57094, 0, 0, 181, 160, 1, 0.5027624368667603, 0.5,[],[-0.3425414562225342,-0.3187499940395355,-0.005524873733520508,-0.481249988079071,0.2486187815666199,-0.21875,0.4917126893997192,0,0.3701657652854919,0.356249988079071,-0.005524873733520508,0.3687499761581421,-0.3756906092166901,0.356249988079071,-0.3867403268814087,0],0]
+				["images/bush-sheet0.png", 57094, 0, 0, 181, 160, 1, 0.5027624368667603, 0.5,[],[-0.3425414562225342,-0.3187499940395355,-0.005524426698684692,-0.481249988079071,0.2486185431480408,-0.21875,0.4917125701904297,0,0.3701655864715576,0.356249988079071,-0.005524426698684692,0.3687499761581421,-0.3756904304027557,0.356249988079071,-0.3867404460906982,0],0]
 			]
 			]
 		],
@@ -17931,7 +18220,7 @@ cr.getProjectModel = function() { return [
 			false,
 			4016864052273239,
 			[
-				["images/boardleft-sheet0.png", 15061, 0, 0, 326, 220, 1, 0.5, 0.5,[],[-0.2423312962055206,0.1181818246841431,-0.2975460290908814,0,-0.4877300560474396,-0.4818181991577148,0,-0.5,0.2055214643478394,-0.06363636255264282,0.4846625924110413,0,0.3926380276679993,0.3409091234207153,0,0.5],0]
+				["images/boardleft-sheet0.png", 15061, 0, 0, 326, 220, 1, 0.5, 0.5,[],[-0.2423309981822968,0.1181820034980774,-0.297545999288559,0,-0.487730085849762,-0.4818181991577148,0,-0.5,0.2055209875106812,-0.06363600492477417,0.4846630096435547,0,0.3926380276679993,0.3409090042114258,0,0.5],0]
 			]
 			]
 		],
@@ -17971,7 +18260,7 @@ cr.getProjectModel = function() { return [
 			false,
 			2046533952408608,
 			[
-				["images/boardright-sheet0.png", 14789, 0, 0, 326, 220, 1, 0.5, 0.5,[],[-0.4877300560474396,0.4818181991577148,-0.2975460290908814,0,-0.2423312962055206,-0.1181818246841431,0,-0.5,0.3926380276679993,-0.3409090638160706,0.487730085849762,0,0.2055214643478394,0.06363636255264282,0,0.5],0]
+				["images/boardright-sheet0.png", 14789, 0, 0, 326, 220, 1, 0.5, 0.5,[],[-0.487730085849762,0.4818180203437805,-0.297545999288559,0,-0.2423309981822968,-0.1181820034980774,0,-0.5,0.3926380276679993,-0.3409090042114258,0.4877300262451172,0,0.2055209875106812,0.06363600492477417,0,0.5],0]
 			]
 			]
 		],
@@ -18011,7 +18300,7 @@ cr.getProjectModel = function() { return [
 			false,
 			5923486648350804,
 			[
-				["images/sprite-sheet0.png", 22108, 0, 0, 214, 252, 1, 0.5, 0.5,[],[-0.4719626307487488,-0.4761904776096344,0,-0.1865079402923584,0.05607473850250244,-0.1230158805847168,0.3551402091979981,0,0.3644859790802002,0.3849206566810608,0,0.39682537317276,-0.02336448431015015,0.0952380895614624,0,0],0]
+				["images/sprite-sheet0.png", 22108, 0, 0, 214, 252, 1, 0.5, 0.5,[],[-0.4719626009464264,-0.4761905074119568,0,-0.1865079998970032,0.05607497692108154,-0.1230159997940064,0.355139970779419,0,0.3644859790802002,0.3849210143089294,0,0.3968250155448914,-0.02336400747299194,0.09523797035217285,0,0],0]
 			]
 			]
 		],
@@ -18051,7 +18340,7 @@ cr.getProjectModel = function() { return [
 			false,
 			5880468237846598,
 			[
-				["images/sprite2-sheet0.png", 7321, 0, 0, 118, 101, 1, 0.5, 0.5049505233764648,[],[-0.3220338821411133,-0.2970297336578369,0,-0.485148549079895,0.3813559412956238,-0.3663366436958313,0.4067796468734741,-0.0099010169506073,0.3220338821411133,0.2871286869049072,0,0.4851484894752502,-0.3135593235492706,0.2772276997566223,-0.491525411605835,-0.0099010169506073],0]
+				["images/sprite2-sheet0.png", 7321, 0, 0, 118, 101, 1, 0.5, 0.5049505233764648,[],[-0.3220340013504028,-0.2970295250415802,0,-0.4851485192775726,0.3813560009002686,-0.3663365244865418,0.4067800045013428,-0.009900510311126709,0.3220340013504028,0.2871284484863281,0,0.4851484894752502,-0.3135589957237244,0.2772274613380432,-0.491525411605835,-0.009900510311126709],0]
 			]
 			]
 		],
@@ -18065,6 +18354,91 @@ cr.getProjectModel = function() { return [
 		false,
 		false,
 		4032557158903897,
+		[],
+		null
+	]
+,	[
+		"t19",
+		cr.plugins_.Button,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		9169661005756378,
+		[],
+		null
+	]
+,	[
+		"t20",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		5195024066107903,
+		[],
+		null
+	]
+,	[
+		"t21",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		9480440092401543,
+		[],
+		null
+	]
+,	[
+		"t22",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		7236032076323375,
+		[],
+		null
+	]
+,	[
+		"t23",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		699686147520454,
 		[],
 		null
 	]
@@ -18095,6 +18469,25 @@ cr.getProjectModel = function() { return [
 			0,
 			0,
 			[
+			[
+				[170, 236, 0, 72, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				19,
+				41,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Login",
+					"",
+					1,
+					1,
+					1,
+					"",
+					0
+				]
+			]
 			],
 			[			]
 		]
@@ -18739,7 +19132,7 @@ cr.getProjectModel = function() { return [
 				]
 			]
 ,			[
-				[209, 97, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				[13, 18, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
 				8,
 				9,
 				[
@@ -19113,6 +19506,26 @@ cr.getProjectModel = function() { return [
 					1
 				]
 			]
+,			[
+				[345, 16, 0, 132, 85, 0, 0, 1, 0, 0, 0, 0, []],
+				20,
+				42,
+				[
+				],
+				[
+				],
+				[
+					"",
+					0,
+					"12pt Arial",
+					"rgb(255,255,255)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
 			],
 			[			]
 		]
@@ -19182,6 +19595,66 @@ cr.getProjectModel = function() { return [
 			0,
 			0,
 			[
+			[
+				[160, 150, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				21,
+				43,
+				[
+				],
+				[
+				],
+				[
+					"",
+					0,
+					"12pt Arial",
+					"rgb(0,0,0)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[99, 366, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				22,
+				45,
+				[
+				],
+				[
+				],
+				[
+					"",
+					0,
+					"12pt Arial",
+					"rgb(0,0,0)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[149, 260, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				23,
+				44,
+				[
+				],
+				[
+				],
+				[
+					"",
+					0,
+					"12pt Arial",
+					"rgb(0,0,0)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
 			],
 			[			]
 		]
@@ -19824,6 +20297,29 @@ false,false,2866061305080595,false
 				]
 			]
 ,			[
+				20,
+				cr.plugins_.Text.prototype.acts.SetText,
+				null,
+				6683327874749022,
+				false
+				,[
+				[
+					7,
+					[
+						10,
+						[
+							2,
+							"Score - "
+						]
+						,[
+							23,
+							"Score"
+						]
+					]
+				]
+				]
+			]
+,			[
 				-1,
 				cr.system_object.prototype.acts.Wait,
 				null,
@@ -19907,11 +20403,18 @@ false,false,2866061305080595,false
 				[
 					7,
 					[
-						20,
-						7,
-						cr.plugins_.Facebook.prototype.exps.FullName,
-						true,
-						null
+						10,
+						[
+							20,
+							7,
+							cr.plugins_.Facebook.prototype.exps.FullName,
+							true,
+							null
+						]
+						,[
+							2,
+							"currently playing!"
+						]
 					]
 				]
 				]
@@ -20179,6 +20682,29 @@ false,false,2866061305080595,false
 				]
 			]
 ,			[
+				20,
+				cr.plugins_.Text.prototype.acts.SetText,
+				null,
+				2464416683047753,
+				false
+				,[
+				[
+					7,
+					[
+						10,
+						[
+							2,
+							"Score - "
+						]
+						,[
+							23,
+							"Score"
+						]
+					]
+				]
+				]
+			]
+,			[
 				-1,
 				cr.system_object.prototype.acts.Wait,
 				null,
@@ -20232,6 +20758,91 @@ false,false,2866061305080595,false
 			]
 			]
 		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			5275634910044818,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.Every,
+				null,
+				0,
+				false,
+				false,
+				false,
+				3355377878027365,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						1
+					]
+				]
+				]
+			]
+,			[
+				0,
+				cr.plugins_.Sprite.prototype.cnds.IsVisible,
+				null,
+				0,
+				false,
+				false,
+				false,
+				6774640618124148,
+				false
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.AddVar,
+				null,
+				5911327720016138,
+				false
+				,[
+				[
+					11,
+					"Score"
+				]
+,				[
+					7,
+					[
+						0,
+						5
+					]
+				]
+				]
+			]
+,			[
+				20,
+				cr.plugins_.Text.prototype.acts.SetText,
+				null,
+				8681848727188809,
+				false
+				,[
+				[
+					7,
+					[
+						10,
+						[
+							2,
+							"Score - "
+						]
+						,[
+							23,
+							"Score"
+						]
+					]
+				]
+				]
+			]
+			]
+		]
 		]
 	]
 ,	[
@@ -20245,8 +20856,8 @@ false,false,2866061305080595,false
 			1550412961421378,
 			[
 			[
-				-1,
-				cr.system_object.prototype.cnds.OnLayoutStart,
+				19,
+				cr.plugins_.Button.prototype.cnds.OnClicked,
 				null,
 				1,
 				false,
@@ -20316,6 +20927,178 @@ false,false,2866061305080595,false
 ,	[
 		"Score Events",
 		[
+		[
+			0,
+			null,
+			false,
+			null,
+			6917801267148826,
+			[
+			[
+				7,
+				cr.plugins_.Facebook.prototype.cnds.OnScoreSubmitted,
+				null,
+				1,
+				false,
+				false,
+				false,
+				6252560575417613,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.IsPreview,
+				null,
+				0,
+				false,
+				false,
+				false,
+				8612756129240493,
+				false
+			]
+			],
+			[
+			[
+				7,
+				cr.plugins_.Facebook.prototype.acts.PublishScore,
+				null,
+				9907268817300516,
+				false
+				,[
+				[
+					0,
+					[
+						23,
+						"Score"
+					]
+				]
+				]
+			]
+,			[
+				21,
+				cr.plugins_.Text.prototype.acts.SetText,
+				null,
+				475168752554287,
+				false
+				,[
+				[
+					7,
+					[
+						10,
+						[
+							2,
+							"Your score is "
+						]
+						,[
+							23,
+							"Score"
+						]
+					]
+				]
+				]
+			]
+,			[
+				7,
+				cr.plugins_.Facebook.prototype.acts.RequestUserHiscore,
+				null,
+				6800995626791869,
+				false
+			]
+,			[
+				7,
+				cr.plugins_.Facebook.prototype.acts.RequestHiscores,
+				null,
+				9402502514219113,
+				false
+				,[
+				[
+					0,
+					[
+						0,
+						10
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			8798761118202785,
+			[
+			[
+				7,
+				cr.plugins_.Facebook.prototype.cnds.OnUserTopScoreAvailable,
+				null,
+				1,
+				false,
+				false,
+				false,
+				8522613670332208,
+				false
+			]
+			],
+			[
+			[
+				23,
+				cr.plugins_.Text.prototype.acts.SetText,
+				null,
+				3623214238518899,
+				false
+				,[
+				[
+					7,
+					[
+						10,
+						[
+							10,
+							[
+								20,
+								7,
+								cr.plugins_.Facebook.prototype.exps.Score,
+								false,
+								null
+							]
+							,[
+								2,
+								" "
+							]
+						]
+						,[
+							2,
+							" Your Top Score"
+						]
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			8529470449269454,
+			[
+			[
+				7,
+				cr.plugins_.Facebook.prototype.cnds.OnHiscore,
+				null,
+				1,
+				false,
+				false,
+				false,
+				7477949725647487,
+				false
+			]
+			],
+			[
+			]
+		]
 		]
 	]
 	],
@@ -20334,7 +21117,7 @@ false,false,2866061305080595,false
 	false,
 	0,
 	0,
-	41,
+	46,
 	false,
 	true,
 	1,
