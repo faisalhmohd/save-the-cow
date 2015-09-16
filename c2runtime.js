@@ -12962,6 +12962,247 @@ cr.system_object.prototype.loadFromJSON = function (o)
 cr.shaders = {};
 ;
 ;
+cr.plugins_.AJAX = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var isNodeWebkit = false;
+	var path = null;
+	var fs = null;
+	var nw_appfolder = "";
+	var pluginProto = cr.plugins_.AJAX.prototype;
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+	};
+	var typeProto = pluginProto.Type.prototype;
+	typeProto.onCreate = function()
+	{
+	};
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+		this.lastData = "";
+		this.curTag = "";
+		this.progress = 0;
+		this.timeout = -1;
+		isNodeWebkit = this.runtime.isNodeWebkit;
+		if (isNodeWebkit)
+		{
+			path = require("path");
+			fs = require("fs");
+			nw_appfolder = path["dirname"](process["execPath"]) + "\\";
+		}
+	};
+	var instanceProto = pluginProto.Instance.prototype;
+	var theInstance = null;
+	window["C2_AJAX_DCSide"] = function (event_, tag_, param_)
+	{
+		if (!theInstance)
+			return;
+		if (event_ === "success")
+		{
+			theInstance.curTag = tag_;
+			theInstance.lastData = param_;
+			theInstance.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnComplete, theInstance);
+		}
+		else if (event_ === "error")
+		{
+			theInstance.curTag = tag_;
+			theInstance.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnError, theInstance);
+		}
+		else if (event_ === "progress")
+		{
+			theInstance.progress = param_;
+			theInstance.curTag = tag_;
+			theInstance.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnProgress, theInstance);
+		}
+	};
+	instanceProto.onCreate = function()
+	{
+		theInstance = this;
+	};
+	instanceProto.saveToJSON = function ()
+	{
+		return { "lastData": this.lastData };
+	};
+	instanceProto.loadFromJSON = function (o)
+	{
+		this.lastData = o["lastData"];
+		this.curTag = "";
+		this.progress = 0;
+	};
+	var next_request_headers = {};
+	instanceProto.doRequest = function (tag_, url_, method_, data_)
+	{
+		if (this.runtime.isDirectCanvas)
+		{
+			AppMobi["webview"]["execute"]('C2_AJAX_WebSide("' + tag_ + '", "' + url_ + '", "' + method_ + '", ' + (data_ ? '"' + data_ + '"' : "null") + ');');
+			return;
+		}
+		var self = this;
+		var request = null;
+		var doErrorFunc = function ()
+		{
+			self.curTag = tag_;
+			self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnError, self);
+		};
+		var errorFunc = function ()
+		{
+			if (isNodeWebkit)
+			{
+				var filepath = nw_appfolder + url_;
+				if (fs["existsSync"](filepath))
+				{
+					fs["readFile"](filepath, {"encoding": "utf8"}, function (err, data) {
+						if (err)
+						{
+							doErrorFunc();
+							return;
+						}
+						self.lastData = data.replace(/\r\n/g, "\n")
+						self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnComplete, self);
+					});
+				}
+				else
+					doErrorFunc();
+			}
+			else
+				doErrorFunc();
+		};
+		var progressFunc = function (e)
+		{
+			if (!e["lengthComputable"])
+				return;
+			self.progress = e.loaded / e.total;
+			self.curTag = tag_;
+			self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnProgress, self);
+		};
+		try
+		{
+			if (this.runtime.isWindowsPhone8)
+				request = new ActiveXObject("Microsoft.XMLHTTP");
+			else
+				request = new XMLHttpRequest();
+			request.onreadystatechange = function()
+			{
+				if (request.readyState === 4)
+				{
+					self.curTag = tag_;
+					if (request.responseText)
+						self.lastData = request.responseText.replace(/\r\n/g, "\n");		// fix windows style line endings
+					else
+						self.lastData = "";
+					if (request.status >= 400)
+						self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnError, self);
+					else
+					{
+						if (!isNodeWebkit || self.lastData.length)
+							self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnComplete, self);
+					}
+				}
+			};
+			if (!this.runtime.isWindowsPhone8)
+			{
+				request.onerror = errorFunc;
+				request.ontimeout = errorFunc;
+				request.onabort = errorFunc;
+				request["onprogress"] = progressFunc;
+			}
+			request.open(method_, url_);
+			if (!this.runtime.isWindowsPhone8)
+			{
+				if (this.timeout >= 0 && typeof request["timeout"] !== "undefined")
+					request["timeout"] = this.timeout;
+			}
+			try {
+				request.responseType = "text";
+			} catch (e) {}
+			if (data_)
+			{
+				if (request["setRequestHeader"])
+				{
+					request["setRequestHeader"]("Content-Type", "application/x-www-form-urlencoded");
+				}
+			}
+			if (request["setRequestHeader"])
+			{
+				var p;
+				for (p in next_request_headers)
+				{
+					if (next_request_headers.hasOwnProperty(p))
+					{
+						try {
+							request["setRequestHeader"](p, next_request_headers[p]);
+						}
+						catch (e) {}
+					}
+				}
+				next_request_headers = {};
+			}
+			if (data_)
+				request.send(data_);
+			else
+				request.send();
+		}
+		catch (e)
+		{
+			errorFunc();
+		}
+	};
+	function Cnds() {};
+	Cnds.prototype.OnComplete = function (tag)
+	{
+		return cr.equals_nocase(tag, this.curTag);
+	};
+	Cnds.prototype.OnError = function (tag)
+	{
+		return cr.equals_nocase(tag, this.curTag);
+	};
+	Cnds.prototype.OnProgress = function (tag)
+	{
+		return cr.equals_nocase(tag, this.curTag);
+	};
+	pluginProto.cnds = new Cnds();
+	function Acts() {};
+	Acts.prototype.Request = function (tag_, url_)
+	{
+		this.doRequest(tag_, url_, "GET");
+	};
+	Acts.prototype.RequestFile = function (tag_, file_)
+	{
+		this.doRequest(tag_, file_, "GET");
+	};
+	Acts.prototype.Post = function (tag_, url_, data_, method_)
+	{
+		this.doRequest(tag_, url_, method_, data_);
+	};
+	Acts.prototype.SetTimeout = function (t)
+	{
+		this.timeout = t * 1000;
+	};
+	Acts.prototype.SetHeader = function (n, v)
+	{
+		next_request_headers[n] = v;
+	};
+	pluginProto.acts = new Acts();
+	function Exps() {};
+	Exps.prototype.LastData = function (ret)
+	{
+		ret.set_string(this.lastData);
+	};
+	Exps.prototype.Progress = function (ret)
+	{
+		ret.set_float(this.progress);
+	};
+	pluginProto.exps = new Exps();
+}());
+;
+;
 cr.plugins_.Button = function(runtime)
 {
 	this.runtime = runtime;
@@ -17636,6 +17877,18 @@ cr.getProjectModel = function() { return [
 	null,
 	[
 	[
+		cr.plugins_.AJAX,
+		true,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false
+	]
+,	[
 		cr.plugins_.Button,
 		false,
 		true,
@@ -17660,18 +17913,6 @@ cr.getProjectModel = function() { return [
 		false
 	]
 ,	[
-		cr.plugins_.Text,
-		false,
-		true,
-		true,
-		true,
-		true,
-		true,
-		true,
-		true,
-		false
-	]
-,	[
 		cr.plugins_.Touch,
 		true,
 		false,
@@ -17685,6 +17926,18 @@ cr.getProjectModel = function() { return [
 	]
 ,	[
 		cr.plugins_.Sprite,
+		false,
+		true,
+		true,
+		true,
+		true,
+		true,
+		true,
+		true,
+		false
+	]
+,	[
+		cr.plugins_.Text,
 		false,
 		true,
 		true,
@@ -18441,6 +18694,41 @@ cr.getProjectModel = function() { return [
 		699686147520454,
 		[],
 		null
+	]
+,	[
+		"t24",
+		cr.plugins_.Button,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		4718964318824709,
+		[],
+		null
+	]
+,	[
+		"t25",
+		cr.plugins_.AJAX,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		2269722913084528,
+		[],
+		null
+		,[]
 	]
 	],
 	[
@@ -19596,7 +19884,7 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
-				[160, 150, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				[63, 544, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
 				21,
 				43,
 				[
@@ -19604,7 +19892,7 @@ cr.getProjectModel = function() { return [
 				[
 				],
 				[
-					"",
+					"Score",
 					0,
 					"12pt Arial",
 					"rgb(0,0,0)",
@@ -19652,6 +19940,25 @@ cr.getProjectModel = function() { return [
 					0,
 					0,
 					0,
+					0
+				]
+			]
+,			[
+				[208, 544, 0, 72, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				24,
+				46,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Post Score",
+					"",
+					1,
+					1,
+					1,
+					"",
 					0
 				]
 			]
@@ -20935,17 +21242,6 @@ false,false,2866061305080595,false
 			6917801267148826,
 			[
 			[
-				7,
-				cr.plugins_.Facebook.prototype.cnds.OnScoreSubmitted,
-				null,
-				1,
-				false,
-				false,
-				false,
-				6252560575417613,
-				false
-			]
-,			[
 				-1,
 				cr.system_object.prototype.cnds.IsPreview,
 				null,
@@ -20959,22 +21255,6 @@ false,false,2866061305080595,false
 			],
 			[
 			[
-				7,
-				cr.plugins_.Facebook.prototype.acts.PublishScore,
-				null,
-				9907268817300516,
-				false
-				,[
-				[
-					0,
-					[
-						23,
-						"Score"
-					]
-				]
-				]
-			]
-,			[
 				21,
 				cr.plugins_.Text.prototype.acts.SetText,
 				null,
@@ -20993,29 +21273,6 @@ false,false,2866061305080595,false
 							23,
 							"Score"
 						]
-					]
-				]
-				]
-			]
-,			[
-				7,
-				cr.plugins_.Facebook.prototype.acts.RequestUserHiscore,
-				null,
-				6800995626791869,
-				false
-			]
-,			[
-				7,
-				cr.plugins_.Facebook.prototype.acts.RequestHiscores,
-				null,
-				9402502514219113,
-				false
-				,[
-				[
-					0,
-					[
-						0,
-						10
 					]
 				]
 				]
@@ -21099,6 +21356,186 @@ false,false,2866061305080595,false
 			[
 			]
 		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			5952480417599966,
+			[
+			[
+				24,
+				cr.plugins_.Button.prototype.cnds.OnClicked,
+				null,
+				1,
+				false,
+				false,
+				false,
+				7739738640576905,
+				false
+			]
+			],
+			[
+			[
+				25,
+				cr.plugins_.AJAX.prototype.acts.Request,
+				null,
+				3093174741460891,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"Posting Score"
+					]
+				]
+,				[
+					1,
+					[
+						10,
+						[
+							10,
+							[
+								10,
+								[
+									10,
+									[
+										10,
+										[
+											2,
+											"https://script.google.com/macros/s/AKfycbyYcSZtgotlMK1XwaWSEo6-BNV8UNnBdhURMmqPL3WFchgqUpU/exec?username="
+										]
+										,[
+											20,
+											7,
+											cr.plugins_.Facebook.prototype.exps.FullName,
+											true,
+											null
+										]
+									]
+									,[
+										2,
+										"&userid="
+									]
+								]
+								,[
+									20,
+									7,
+									cr.plugins_.Facebook.prototype.exps.UserID,
+									false,
+									null
+								]
+							]
+							,[
+								2,
+								"&score="
+							]
+						]
+						,[
+							23,
+							"Score"
+						]
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			653518107210092,
+			[
+			[
+				25,
+				cr.plugins_.AJAX.prototype.cnds.OnComplete,
+				null,
+				1,
+				false,
+				false,
+				false,
+				1714928664867103,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"On Complete"
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				24,
+				cr.plugins_.Button.prototype.acts.SetText,
+				null,
+				6345191070662485,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"Done"
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			3211837478630603,
+			[
+			[
+				25,
+				cr.plugins_.AJAX.prototype.cnds.OnError,
+				null,
+				1,
+				false,
+				false,
+				false,
+				3451046249719904,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"On Error"
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				24,
+				cr.plugins_.Button.prototype.acts.SetText,
+				null,
+				4946962837018258,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"Error"
+					]
+				]
+				]
+			]
+			]
+		]
 		]
 	]
 	],
@@ -21117,7 +21554,7 @@ false,false,2866061305080595,false
 	false,
 	0,
 	0,
-	46,
+	48,
 	false,
 	true,
 	1,
