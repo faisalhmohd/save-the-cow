@@ -15065,6 +15065,777 @@ cr.plugins_.Sprite = function(runtime)
 	};
 	pluginProto.exps = new Exps();
 }());
+/* global cr,log,assert2 */
+/* jshint globalstrict: true */
+/* jshint strict: true */
+;
+;
+cr.plugins_.Spritefont2 = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var pluginProto = cr.plugins_.Spritefont2.prototype;
+	pluginProto.onCreate = function ()
+	{
+	};
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+	};
+	var typeProto = pluginProto.Type.prototype;
+	typeProto.onCreate = function()
+	{
+		if (this.is_family)
+			return;
+		this.texture_img = new Image();
+		this.texture_img["idtkLoadDisposed"] = true;
+		this.texture_img.src = this.texture_file;
+		this.runtime.waitForImageLoad(this.texture_img);
+		this.webGL_texture = null;
+	};
+	typeProto.onLostWebGLContext = function ()
+	{
+		if (this.is_family)
+			return;
+		this.webGL_texture = null;
+	};
+	typeProto.onRestoreWebGLContext = function ()
+	{
+		if (this.is_family || !this.instances.length)
+			return;
+		if (!this.webGL_texture)
+		{
+			this.webGL_texture = this.runtime.glwrap.loadTexture(this.texture_img, false, this.runtime.linearSampling, this.texture_pixelformat);
+		}
+		var i, len;
+		for (i = 0, len = this.instances.length; i < len; i++)
+			this.instances[i].webGL_texture = this.webGL_texture;
+	};
+	typeProto.unloadTextures = function ()
+	{
+		if (this.is_family || this.instances.length || !this.webGL_texture)
+			return;
+		this.runtime.glwrap.deleteTexture(this.webGL_texture);
+		this.webGL_texture = null;
+	};
+	typeProto.preloadCanvas2D = function (ctx)
+	{
+		ctx.drawImage(this.texture_img, 0, 0);
+	};
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+	};
+	var instanceProto = pluginProto.Instance.prototype;
+	instanceProto.onDestroy = function()
+	{
+		freeAllLines (this.lines);
+		freeAllClip  (this.clipList);
+		freeAllClipUV(this.clipUV);
+		cr.wipe(this.characterWidthList);
+	};
+	instanceProto.onCreate = function()
+	{
+		this.texture_img      = this.type.texture_img;
+		this.characterWidth   = this.properties[0];
+		this.characterHeight  = this.properties[1];
+		this.characterSet     = this.properties[2];
+		this.text             = this.properties[3];
+		this.characterScale   = this.properties[4];
+		this.visible          = (this.properties[5] === 0);	// 0=visible, 1=invisible
+		this.halign           = this.properties[6]/2.0;			// 0=left, 1=center, 2=right
+		this.valign           = this.properties[7]/2.0;			// 0=top, 1=center, 2=bottom
+		this.wrapbyword       = (this.properties[9] === 0);	// 0=word, 1=character
+		this.characterSpacing = this.properties[10];
+		this.lineHeight       = this.properties[11];
+		this.textWidth  = 0;
+		this.textHeight = 0;
+		if (this.recycled)
+		{
+			this.lines.length = 0;
+			cr.wipe(this.clipList);
+			cr.wipe(this.clipUV);
+			cr.wipe(this.characterWidthList);
+		}
+		else
+		{
+			this.lines = [];
+			this.clipList = {};
+			this.clipUV = {};
+			this.characterWidthList = {};
+		}
+		this.text_changed = true;
+		this.lastwrapwidth = this.width;
+		if (this.runtime.glwrap)
+		{
+			if (!this.type.webGL_texture)
+			{
+				this.type.webGL_texture = this.runtime.glwrap.loadTexture(this.type.texture_img, false, this.runtime.linearSampling, this.type.texture_pixelformat);
+			}
+			this.webGL_texture = this.type.webGL_texture;
+		}
+		this.SplitSheet();
+	};
+	instanceProto.saveToJSON = function ()
+	{
+		var save = {
+			"t": this.text,
+			"csc": this.characterScale,
+			"csp": this.characterSpacing,
+			"lh": this.lineHeight,
+			"tw": this.textWidth,
+			"th": this.textHeight,
+			"lrt": this.last_render_tick,
+			"cw": {}
+		};
+		for (var ch in this.characterWidthList)
+			save["cw"][ch] = this.characterWidthList[ch];
+		return save;
+	};
+	instanceProto.loadFromJSON = function (o)
+	{
+		this.text = o["t"];
+		this.characterScale = o["csc"];
+		this.characterSpacing = o["csp"];
+		this.lineHeight = o["lh"];
+		this.textWidth = o["tw"];
+		this.textHeight = o["th"];
+		this.last_render_tick = o["lrt"];
+		for(var ch in o["cw"])
+			this.characterWidthList[ch] = o["cw"][ch];
+		this.text_changed = true;
+		this.lastwrapwidth = this.width;
+	};
+	function trimRight(text)
+	{
+		return text.replace(/\s\s*$/, '');
+	}
+	var MAX_CACHE_SIZE = 1000;
+	function alloc(cache,Constructor)
+	{
+		if (cache.length)
+			return cache.pop();
+		else
+			return new Constructor();
+	}
+	function free(cache,data)
+	{
+		if (cache.length < MAX_CACHE_SIZE)
+		{
+			cache.push(data);
+		}
+	}
+	function freeAll(cache,dataList,isArray)
+	{
+		if (isArray) {
+			var i, len;
+			for (i = 0, len = dataList.length; i < len; i++)
+			{
+				free(cache,dataList[i]);
+			}
+			dataList.length = 0;
+		} else {
+			var prop;
+			for(prop in dataList) {
+				if(Object.prototype.hasOwnProperty.call(dataList,prop)) {
+					free(cache,dataList[prop]);
+					delete dataList[prop];
+				}
+			}
+		}
+	}
+	function addLine(inst,lineIndex,cur_line) {
+		var lines = inst.lines;
+		var line;
+		cur_line = trimRight(cur_line);
+		if (lineIndex >= lines.length)
+			lines.push(allocLine());
+		line = lines[lineIndex];
+		line.text = cur_line;
+		line.width = inst.measureWidth(cur_line);
+		inst.textWidth = cr.max(inst.textWidth,line.width);
+	}
+	var linesCache = [];
+	function allocLine()       { return alloc(linesCache,Object); }
+	function freeLine(l)       { free(linesCache,l); }
+	function freeAllLines(arr) { freeAll(linesCache,arr,true); }
+	function addClip(obj,property,x,y,w,h) {
+		if (obj[property] === undefined) {
+			obj[property] = alloc(clipCache,Object);
+		}
+		obj[property].x = x;
+		obj[property].y = y;
+		obj[property].w = w;
+		obj[property].h = h;
+	}
+	var clipCache = [];
+	function allocClip()      { return alloc(clipCache,Object); }
+	function freeAllClip(obj) { freeAll(clipCache,obj,false);}
+	function addClipUV(obj,property,left,top,right,bottom) {
+		if (obj[property] === undefined) {
+			obj[property] = alloc(clipUVCache,cr.rect);
+		}
+		obj[property].left   = left;
+		obj[property].top    = top;
+		obj[property].right  = right;
+		obj[property].bottom = bottom;
+	}
+	var clipUVCache = [];
+	function allocClipUV()      { return alloc(clipUVCache,cr.rect);}
+	function freeAllClipUV(obj) { freeAll(clipUVCache,obj,false);}
+	instanceProto.SplitSheet = function() {
+		var texture      = this.texture_img;
+		var texWidth     = texture.width;
+		var texHeight    = texture.height;
+		var charWidth    = this.characterWidth;
+		var charHeight   = this.characterHeight;
+		var charU        = charWidth /texWidth;
+		var charV        = charHeight/texHeight;
+		var charSet      = this.characterSet ;
+		var cols = Math.floor(texWidth/charWidth);
+		var rows = Math.floor(texHeight/charHeight);
+		for ( var c = 0; c < charSet.length; c++) {
+			if  (c >= cols * rows) break;
+			var x = c%cols;
+			var y = Math.floor(c/cols);
+			var letter = charSet.charAt(c);
+			if (this.runtime.glwrap) {
+				addClipUV(
+					this.clipUV, letter,
+					x * charU ,
+					y * charV ,
+					(x+1) * charU ,
+					(y+1) * charV
+				);
+			} else {
+				addClip(
+					this.clipList, letter,
+					x * charWidth,
+					y * charHeight,
+					charWidth,
+					charHeight
+				);
+			}
+		}
+	};
+	/*
+     *	Word-Wrapping
+     */
+	var wordsCache = [];
+	pluginProto.TokeniseWords = function (text)
+	{
+		wordsCache.length = 0;
+		var cur_word = "";
+		var ch;
+		var i = 0;
+		while (i < text.length)
+		{
+			ch = text.charAt(i);
+			if (ch === "\n")
+			{
+				if (cur_word.length)
+				{
+					wordsCache.push(cur_word);
+					cur_word = "";
+				}
+				wordsCache.push("\n");
+				++i;
+			}
+			else if (ch === " " || ch === "\t" || ch === "-")
+			{
+				do {
+					cur_word += text.charAt(i);
+					i++;
+				}
+				while (i < text.length && (text.charAt(i) === " " || text.charAt(i) === "\t"));
+				wordsCache.push(cur_word);
+				cur_word = "";
+			}
+			else if (i < text.length)
+			{
+				cur_word += ch;
+				i++;
+			}
+		}
+		if (cur_word.length)
+			wordsCache.push(cur_word);
+	};
+	pluginProto.WordWrap = function (inst)
+	{
+		var text = inst.text;
+		var lines = inst.lines;
+		if (!text || !text.length)
+		{
+			freeAllLines(lines);
+			return;
+		}
+		var width = inst.width;
+		if (width <= 2.0)
+		{
+			freeAllLines(lines);
+			return;
+		}
+		var charWidth = inst.characterWidth;
+		var charScale = inst.characterScale;
+		var charSpacing = inst.characterSpacing;
+		if ( (text.length * (charWidth * charScale + charSpacing) - charSpacing) <= width && text.indexOf("\n") === -1)
+		{
+			var all_width = inst.measureWidth(text);
+			if (all_width <= width)
+			{
+				freeAllLines(lines);
+				lines.push(allocLine());
+				lines[0].text = text;
+				lines[0].width = all_width;
+				inst.textWidth  = all_width;
+				inst.textHeight = inst.characterHeight * charScale + inst.lineHeight;
+				return;
+			}
+		}
+		var wrapbyword = inst.wrapbyword;
+		this.WrapText(inst);
+		inst.textHeight = lines.length * (inst.characterHeight * charScale + inst.lineHeight);
+	};
+	pluginProto.WrapText = function (inst)
+	{
+		var wrapbyword = inst.wrapbyword;
+		var text       = inst.text;
+		var lines      = inst.lines;
+		var width      = inst.width;
+		var wordArray;
+		if (wrapbyword) {
+			this.TokeniseWords(text);	// writes to wordsCache
+			wordArray = wordsCache;
+		} else {
+			wordArray = text;
+		}
+		var cur_line = "";
+		var prev_line;
+		var line_width;
+		var i;
+		var lineIndex = 0;
+		var line;
+		var ignore_newline = false;
+		for (i = 0; i < wordArray.length; i++)
+		{
+			if (wordArray[i] === "\n")
+			{
+				if (ignore_newline === true) {
+					ignore_newline = false;
+				} else {
+					addLine(inst,lineIndex,cur_line);
+					lineIndex++;
+				}
+				cur_line = "";
+				continue;
+			}
+			ignore_newline = false;
+			prev_line = cur_line;
+			cur_line += wordArray[i];
+			line_width = inst.measureWidth(trimRight(cur_line));
+			if (line_width > width)
+			{
+				if (prev_line === "") {
+					addLine(inst,lineIndex,cur_line);
+					cur_line = "";
+					ignore_newline = true;
+				} else {
+					addLine(inst,lineIndex,prev_line);
+					cur_line = wordArray[i];
+				}
+				lineIndex++;
+				if (!wrapbyword && cur_line === " ")
+					cur_line = "";
+			}
+		}
+		if (trimRight(cur_line).length)
+		{
+			addLine(inst,lineIndex,cur_line);
+			lineIndex++;
+		}
+		for (i = lineIndex; i < lines.length; i++)
+			freeLine(lines[i]);
+		lines.length = lineIndex;
+	};
+	instanceProto.measureWidth = function(text) {
+		var spacing = this.characterSpacing;
+		var len     = text.length;
+		var width   = 0;
+		for (var i = 0; i < len; i++) {
+			width += this.getCharacterWidth(text.charAt(i)) * this.characterScale + spacing;
+		}
+		width -= (width > 0) ? spacing : 0;
+		return width;
+	};
+	/***/
+	instanceProto.getCharacterWidth = function(character) {
+		var widthList = this.characterWidthList;
+		if (widthList[character] !== undefined) {
+			return widthList[character];
+		} else {
+			return this.characterWidth;
+		}
+	};
+	instanceProto.rebuildText = function() {
+		if (this.text_changed || this.width !== this.lastwrapwidth) {
+			this.textWidth = 0;
+			this.textHeight = 0;
+			this.type.plugin.WordWrap(this);
+			this.text_changed = false;
+			this.lastwrapwidth = this.width;
+		}
+	};
+	var EPSILON = 0.00001;
+	instanceProto.draw = function(ctx, glmode)
+	{
+		var texture = this.texture_img;
+		if (this.text !== "" && texture != null) {
+			this.rebuildText();
+			if (this.height < this.characterHeight*this.characterScale + this.lineHeight) {
+				return;
+			}
+			ctx.globalAlpha = this.opacity;
+			var myx = this.x;
+			var myy = this.y;
+			if (this.runtime.pixel_rounding)
+			{
+				myx = Math.round(myx);
+				myy = Math.round(myy);
+			}
+			var viewLeft = this.layer.viewLeft;
+			var viewTop = this.layer.viewTop;
+			var viewRight = this.layer.viewRight;
+			var viewBottom = this.layer.viewBottom;
+			ctx.save();
+			ctx.translate(myx, myy);
+			ctx.rotate(this.angle);
+			var ha         = this.halign;
+			var va         = this.valign;
+			var scale      = this.characterScale;
+			var charHeight = this.characterHeight * scale;
+			var lineHeight = this.lineHeight;
+			var charSpace  = this.characterSpacing;
+			var lines = this.lines;
+			var textHeight = this.textHeight;
+			var letterWidth;
+			var halign;
+			var valign = va * cr.max(0,(this.height - textHeight));
+			var offx = -(this.hotspotX * this.width);
+			var offy = -(this.hotspotY * this.height);
+			offy += valign;
+			var drawX ;
+			var drawY = offy;
+			var roundX, roundY;
+			for(var i = 0; i < lines.length; i++) {
+				var line = lines[i].text;
+				var len  = lines[i].width;
+				halign = ha * cr.max(0,this.width - len);
+				drawX = offx + halign;
+				drawY += lineHeight;
+				if (myy + drawY + charHeight < viewTop)
+				{
+					drawY += charHeight;
+					continue;
+				}
+				for(var j = 0; j < line.length; j++) {
+					var letter = line.charAt(j);
+					letterWidth = this.getCharacterWidth(letter);
+					var clip = this.clipList[letter];
+					if (myx + drawX + letterWidth * scale + charSpace < viewLeft)
+					{
+						drawX += letterWidth * scale + charSpace;
+						continue;
+					}
+					if ( drawX + letterWidth * scale > this.width + EPSILON ) {
+						break;
+					}
+					if (clip !== undefined) {
+						roundX = drawX;
+						roundY = drawY;
+						if (this.angle === 0)
+						{
+							roundX = Math.round(roundX);
+							roundY = Math.round(roundY);
+						}
+						ctx.drawImage( this.texture_img,
+									 clip.x, clip.y, clip.w, clip.h,
+									 roundX,roundY,clip.w*scale,clip.h*scale);
+					}
+					drawX += letterWidth * scale + charSpace;
+					if (myx + drawX > viewRight)
+						break;
+				}
+				drawY += charHeight;
+				if (drawY + charHeight + lineHeight > this.height || myy + drawY > viewBottom)
+				{
+					break;
+				}
+			}
+			ctx.restore();
+		}
+	};
+	var dQuad = new cr.quad();
+	function rotateQuad(quad,cosa,sina) {
+		var x_temp;
+		x_temp   = (quad.tlx * cosa) - (quad.tly * sina);
+		quad.tly = (quad.tly * cosa) + (quad.tlx * sina);
+		quad.tlx = x_temp;
+		x_temp    = (quad.trx * cosa) - (quad.try_ * sina);
+		quad.try_ = (quad.try_ * cosa) + (quad.trx * sina);
+		quad.trx  = x_temp;
+		x_temp   = (quad.blx * cosa) - (quad.bly * sina);
+		quad.bly = (quad.bly * cosa) + (quad.blx * sina);
+		quad.blx = x_temp;
+		x_temp    = (quad.brx * cosa) - (quad.bry * sina);
+		quad.bry = (quad.bry * cosa) + (quad.brx * sina);
+		quad.brx  = x_temp;
+	}
+	instanceProto.drawGL = function(glw)
+	{
+		glw.setTexture(this.webGL_texture);
+		glw.setOpacity(this.opacity);
+		if (!this.text)
+			return;
+		this.rebuildText();
+		if (this.height < this.characterHeight*this.characterScale + this.lineHeight) {
+			return;
+		}
+		this.update_bbox();
+		var q = this.bquad;
+		var ox = 0;
+		var oy = 0;
+		if (this.runtime.pixel_rounding)
+		{
+			ox = Math.round(this.x) - this.x;
+			oy = Math.round(this.y) - this.y;
+		}
+		var viewLeft = this.layer.viewLeft;
+		var viewTop = this.layer.viewTop;
+		var viewRight = this.layer.viewRight;
+		var viewBottom = this.layer.viewBottom;
+		var angle      = this.angle;
+		var ha         = this.halign;
+		var va         = this.valign;
+		var scale      = this.characterScale;
+		var charHeight = this.characterHeight * scale;   // to precalculate in onCreate or on change
+		var lineHeight = this.lineHeight;
+		var charSpace  = this.characterSpacing;
+		var lines = this.lines;
+		var textHeight = this.textHeight;
+		var letterWidth;
+		var cosa,sina;
+		if (angle !== 0)
+		{
+			cosa = Math.cos(angle);
+			sina = Math.sin(angle);
+		}
+		var halign;
+		var valign = va * cr.max(0,(this.height - textHeight));
+		var offx = q.tlx + ox;
+		var offy = q.tly + oy;
+		var drawX ;
+		var drawY = valign;
+		var roundX, roundY;
+		for(var i = 0; i < lines.length; i++) {
+			var line       = lines[i].text;
+			var lineWidth  = lines[i].width;
+			halign = ha * cr.max(0,this.width - lineWidth);
+			drawX = halign;
+			drawY += lineHeight;
+			if (offy + drawY + charHeight < viewTop)
+			{
+				drawY += charHeight;
+				continue;
+			}
+			for(var j = 0; j < line.length; j++) {
+				var letter = line.charAt(j);
+				letterWidth = this.getCharacterWidth(letter);
+				var clipUV = this.clipUV[letter];
+				if (offx + drawX + letterWidth * scale + charSpace < viewLeft)
+				{
+					drawX += letterWidth * scale + charSpace;
+					continue;
+				}
+				if (drawX + letterWidth * scale > this.width + EPSILON)
+				{
+					break;
+				}
+				if (clipUV !== undefined) {
+					var clipWidth  = this.characterWidth*scale;
+					var clipHeight = this.characterHeight*scale;
+					roundX = drawX;
+					roundY = drawY;
+					if (angle === 0)
+					{
+						roundX = Math.round(roundX);
+						roundY = Math.round(roundY);
+					}
+					dQuad.tlx  = roundX;
+					dQuad.tly  = roundY;
+					dQuad.trx  = roundX + clipWidth;
+					dQuad.try_ = roundY ;
+					dQuad.blx  = roundX;
+					dQuad.bly  = roundY + clipHeight;
+					dQuad.brx  = roundX + clipWidth;
+					dQuad.bry  = roundY + clipHeight;
+					if(angle !== 0)
+					{
+						rotateQuad(dQuad,cosa,sina);
+					}
+					dQuad.offset(offx,offy);
+					glw.quadTex(
+						dQuad.tlx, dQuad.tly,
+						dQuad.trx, dQuad.try_,
+						dQuad.brx, dQuad.bry,
+						dQuad.blx, dQuad.bly,
+						clipUV
+					);
+				}
+				drawX += letterWidth * scale + charSpace;
+				if (offx + drawX > viewRight)
+					break;
+			}
+			drawY += charHeight;
+			if (drawY + charHeight + lineHeight > this.height || offy + drawY > viewBottom)
+			{
+				break;
+			}
+		}
+	};
+	function Cnds() {}
+	Cnds.prototype.CompareText = function(text_to_compare, case_sensitive)
+	{
+		if (case_sensitive)
+			return this.text == text_to_compare;
+		else
+			return cr.equals_nocase(this.text, text_to_compare);
+	};
+	pluginProto.cnds = new Cnds();
+	function Acts() {}
+	Acts.prototype.SetText = function(param)
+	{
+		if (cr.is_number(param) && param < 1e9)
+			param = Math.round(param * 1e10) / 1e10;	// round to nearest ten billionth - hides floating point errors
+		var text_to_set = param.toString();
+		if (this.text !== text_to_set)
+		{
+			this.text = text_to_set;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	Acts.prototype.AppendText = function(param)
+	{
+		if (cr.is_number(param))
+			param = Math.round(param * 1e10) / 1e10;	// round to nearest ten billionth - hides floating point errors
+		var text_to_append = param.toString();
+		if (text_to_append)	// not empty
+		{
+			this.text += text_to_append;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	Acts.prototype.SetScale = function(param)
+	{
+		if (param !== this.characterScale) {
+			this.characterScale = param;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	Acts.prototype.SetCharacterSpacing = function(param)
+	{
+		if (param !== this.CharacterSpacing) {
+			this.characterSpacing = param;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	Acts.prototype.SetLineHeight = function(param)
+	{
+		if (param !== this.lineHeight) {
+			this.lineHeight = param;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	instanceProto.SetCharWidth = function(character,width) {
+		var w = parseInt(width,10);
+		if (this.characterWidthList[character] !== w) {
+			this.characterWidthList[character] = w;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	Acts.prototype.SetCharacterWidth = function(characterSet,width)
+	{
+		if (characterSet !== "") {
+			for(var c = 0; c < characterSet.length; c++) {
+				this.SetCharWidth(characterSet.charAt(c),width);
+			}
+		}
+	};
+	Acts.prototype.SetEffect = function (effect)
+	{
+		this.compositeOp = cr.effectToCompositeOp(effect);
+		cr.setGLBlend(this, effect, this.runtime.gl);
+		this.runtime.redraw = true;
+	};
+	Acts.prototype.SetHAlign = function (a)
+	{
+		this.halign = a / 2.0;
+		this.text_changed = true;
+		this.runtime.redraw = true;
+	};
+	Acts.prototype.SetVAlign = function (a)
+	{
+		this.valign = a / 2.0;
+		this.text_changed = true;
+		this.runtime.redraw = true;
+	};
+	pluginProto.acts = new Acts();
+	function Exps() {}
+	Exps.prototype.CharacterWidth = function(ret,character)
+	{
+		ret.set_int(this.getCharacterWidth(character));
+	};
+	Exps.prototype.CharacterHeight = function(ret)
+	{
+		ret.set_int(this.characterHeight);
+	};
+	Exps.prototype.CharacterScale = function(ret)
+	{
+		ret.set_float(this.characterScale);
+	};
+	Exps.prototype.CharacterSpacing = function(ret)
+	{
+		ret.set_int(this.characterSpacing);
+	};
+	Exps.prototype.LineHeight = function(ret)
+	{
+		ret.set_int(this.lineHeight);
+	};
+	Exps.prototype.Text = function(ret)
+	{
+		ret.set_string(this.text);
+	};
+	Exps.prototype.TextWidth = function (ret)
+	{
+		this.rebuildText();
+		ret.set_float(this.textWidth);
+	};
+	Exps.prototype.TextHeight = function (ret)
+	{
+		this.rebuildText();
+		ret.set_float(this.textHeight);
+	};
+	pluginProto.exps = new Exps();
+}());
 ;
 ;
 cr.plugins_.Text = function(runtime)
@@ -17913,18 +18684,6 @@ cr.getProjectModel = function() { return [
 		false
 	]
 ,	[
-		cr.plugins_.Touch,
-		true,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false
-	]
-,	[
 		cr.plugins_.Sprite,
 		false,
 		true,
@@ -17937,6 +18696,18 @@ cr.getProjectModel = function() { return [
 		false
 	]
 ,	[
+		cr.plugins_.Spritefont2,
+		false,
+		true,
+		true,
+		true,
+		true,
+		true,
+		true,
+		true,
+		true
+	]
+,	[
 		cr.plugins_.Text,
 		false,
 		true,
@@ -17946,6 +18717,18 @@ cr.getProjectModel = function() { return [
 		true,
 		true,
 		true,
+		false
+	]
+,	[
+		cr.plugins_.Touch,
+		true,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
+		false,
 		false
 	]
 	],
@@ -18730,6 +19513,181 @@ cr.getProjectModel = function() { return [
 		null
 		,[]
 	]
+,	[
+		"t26",
+		cr.plugins_.Button,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		5840767074322433,
+		[],
+		null
+	]
+,	[
+		"t27",
+		cr.plugins_.Button,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		1083957772806049,
+		[],
+		null
+	]
+,	[
+		"t28",
+		cr.plugins_.Sprite,
+		false,
+		[],
+		0,
+		0,
+		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			9455392925656776,
+			[
+				["images/sprite3-sheet0.png", 231313, 0, 0, 924, 1980, 1, 0.5, 0.5,[],[],1]
+			]
+			]
+		],
+		[
+		],
+		false,
+		false,
+		991630394538839,
+		[],
+		null
+	]
+,	[
+		"t29",
+		cr.plugins_.Spritefont2,
+		false,
+		[],
+		0,
+		0,
+		["images/spritefont.png", 1427, 3],
+		null,
+		[
+		],
+		false,
+		false,
+		1764699197704819,
+		[],
+		null
+	]
+,	[
+		"t30",
+		cr.plugins_.Sprite,
+		false,
+		[],
+		0,
+		0,
+		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			835653967050566,
+			[
+				["images/sprite4-sheet0.png", 9848, 0, 0, 306, 111, 1, 0.5, 0.5045045018196106,[],[-0.4117647111415863,-0.261261522769928,0,-0.4054054021835327,0.2189540266990662,0.2702705264091492,0.01307201385498047,-0.009009510278701782,0.4738559722900391,0.4234234690666199,0,0.3873875141143799,-0.4313724935054779,0.3063064813613892,-0.4411765038967133,-0.009009510278701782],0]
+			]
+			]
+		],
+		[
+		],
+		false,
+		false,
+		4753775838015845,
+		[],
+		null
+	]
+,	[
+		"t31",
+		cr.plugins_.Sprite,
+		false,
+		[],
+		0,
+		0,
+		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			2153465221105383,
+			[
+				["images/sprite5-sheet0.png", 46896, 0, 0, 551, 830, 1, 0.5009074211120606, 0.5,[],[-0.3956444263458252,-0.4301204979419708,-0.001814424991607666,-0.4975903630256653,0.4410165548324585,-0.4614458084106445,0.3684206008911133,0,0.3847545981407166,0.4240959882736206,-0.001814424991607666,0.491566002368927,-0.4301270246505737,0.4530119895935059,-0.3738654255867004,0],0]
+			]
+			]
+		],
+		[
+		],
+		false,
+		false,
+		5095487319091682,
+		[],
+		null
+	]
+,	[
+		"t32",
+		cr.plugins_.Button,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		473478807311298,
+		[],
+		null
+	]
+,	[
+		"t33",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		2969357326065162,
+		[],
+		null
+	]
 	],
 	[
 	],
@@ -18758,7 +19716,22 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
-				[170, 236, 0, 72, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				[238, 556, 0, 492, 1130, 0, 0, 1, 0.5, 0.5, 0, 0, []],
+				28,
+				50,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[114, 431, 0, 231, 24, 0, 0, 1, 0, 0, 0, 0, []],
 				19,
 				41,
 				[
@@ -18767,13 +19740,81 @@ cr.getProjectModel = function() { return [
 				],
 				[
 					0,
-					"Login",
+					"Login With Facebook",
 					"",
 					1,
 					1,
 					1,
 					"",
 					0
+				]
+			]
+,			[
+				[115, 473, 0, 228, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				26,
+				48,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Play Now",
+					"",
+					1,
+					1,
+					1,
+					"",
+					0
+				]
+			]
+,			[
+				[116, 515, 0, 227, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				27,
+				49,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Instructions",
+					"",
+					1,
+					1,
+					1,
+					"",
+					0
+				]
+			]
+,			[
+				[232, 253, 0, 188.5861206054688, 284.0770874023438, 0, 0, 1, 0.5009074211120606, 0.5, 0, 0, []],
+				31,
+				52,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[234.8274536132813, 79.76689910888672, 0, 150.3050994873047, 54.52243804931641, 0, 0, 1, 0.5, 0.5045045018196106, 0, 0, []],
+				30,
+				51,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
 				]
 			]
 			],
@@ -19884,7 +20925,22 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
-				[63, 544, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				[252, 502, 0, 569, 1105, 0, 0, 1, 0.5, 0.5, 0, 0, []],
+				28,
+				57,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[164, 427, 0, 200, 30, 0, 0, 1, 0, 0, 0, 0, []],
 				21,
 				43,
 				[
@@ -19895,7 +20951,7 @@ cr.getProjectModel = function() { return [
 					"Score",
 					0,
 					"12pt Arial",
-					"rgb(0,0,0)",
+					"rgb(255,255,255)",
 					0,
 					0,
 					0,
@@ -19944,7 +21000,7 @@ cr.getProjectModel = function() { return [
 				]
 			]
 ,			[
-				[208, 544, 0, 72, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				[141, 489, 0, 183, 24, 0, 0, 1, 0, 0, 0, 0, []],
 				24,
 				46,
 				[
@@ -19953,7 +21009,7 @@ cr.getProjectModel = function() { return [
 				],
 				[
 					0,
-					"Post Score",
+					"Share & Publish",
 					"",
 					1,
 					1,
@@ -19962,6 +21018,106 @@ cr.getProjectModel = function() { return [
 					0
 				]
 			]
+,			[
+				[235, 88, 0, 150.3050994873047, 54.52243804931641, 0, 0, 1, 0.5, 0.5045045018196106, 0, 0, []],
+				30,
+				53,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[231, 267, 0, 188.5861206054688, 284.0770874023438, 0, 0, 1, 0.5009074211120606, 0.5, 0, 0, []],
+				31,
+				54,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[143, 526, 0, 180, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				32,
+				55,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Play Again",
+					"",
+					1,
+					1,
+					1,
+					"",
+					0
+				]
+			]
+,			[
+				[102, 459, 0, 271, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				33,
+				56,
+				[
+				],
+				[
+				],
+				[
+					"yourid",
+					0,
+					"12pt Arial",
+					"rgb(255,255,255)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+			],
+			[			]
+		]
+		],
+		[
+		],
+		[]
+	]
+,	[
+		"Instructions Screen",
+		480,
+		640,
+		false,
+		"Event sheet 1",
+		8691100112028224,
+		[
+		[
+			"Layer 0",
+			0,
+			7081165736410745,
+			true,
+			[255, 255, 255],
+			false,
+			1,
+			1,
+			1,
+			false,
+			1,
+			0,
+			0,
+			[
 			],
 			[			]
 		]
@@ -21215,15 +22371,434 @@ false,false,2866061305080595,false
 			],
 			[
 			[
+				19,
+				cr.plugins_.Button.prototype.acts.Destroy,
+				null,
+				6905466051002338,
+				false
+			]
+,			[
+				26,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				5984853212283737,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"background"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				26,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				5064428405681186,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"border-color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			3099706287565066,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.OnLayoutStart,
+				null,
+				1,
+				false,
+				false,
+				false,
+				9615386619524824,
+				false
+			]
+			],
+			[
+			[
+				19,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				5705442404541926,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"white"
+					]
+				]
+				]
+			]
+,			[
+				19,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				1254312775419812,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"background"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				19,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				8923455609572451,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"border-color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				19,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				5467832758502647,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"font-size"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"17px"
+					]
+				]
+				]
+			]
+,			[
+				27,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				749114868256789,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"white"
+					]
+				]
+				]
+			]
+,			[
+				27,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				1437940649988466,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"background"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				27,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				3985562728474022,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"border-color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				27,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				71365541183631,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"font-size"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"17px"
+					]
+				]
+				]
+			]
+,			[
+				26,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				7351807909463122,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"white"
+					]
+				]
+				]
+			]
+,			[
+				26,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				7341811010507434,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"background"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"grey"
+					]
+				]
+				]
+			]
+,			[
+				26,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				639433447237004,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"border-color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"grey"
+					]
+				]
+				]
+			]
+,			[
+				26,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				3888135739713575,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"font-size"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"17px"
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			6364916565975871,
+			[
+			[
+				26,
+				cr.plugins_.Button.prototype.cnds.OnClicked,
+				null,
+				1,
+				false,
+				false,
+				false,
+				590345888292581,
+				false
+			]
+,			[
+				7,
+				cr.plugins_.Facebook.prototype.cnds.IsLoggedIn,
+				null,
+				0,
+				false,
+				false,
+				false,
+				1526599061307567,
+				false
+			]
+			],
+			[
+			[
 				-1,
 				cr.system_object.prototype.acts.GoToLayout,
 				null,
-				6345949799778543,
+				3371481650429307,
 				false
 				,[
 				[
 					6,
 					"Game Screen"
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			8089874960466921,
+			[
+			[
+				27,
+				cr.plugins_.Button.prototype.cnds.OnClicked,
+				null,
+				1,
+				false,
+				false,
+				false,
+				9091762348865192,
+				false
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.GoToLayout,
+				null,
+				8072026505361477,
+				false
+				,[
+				[
+					6,
+					"Instructions Screen"
 				]
 				]
 			]
@@ -21243,13 +22818,13 @@ false,false,2866061305080595,false
 			[
 			[
 				-1,
-				cr.system_object.prototype.cnds.IsPreview,
+				cr.system_object.prototype.cnds.OnLayoutStart,
 				null,
-				0,
+				1,
 				false,
 				false,
 				false,
-				8612756129240493,
+				9864944943689498,
 				false
 			]
 			],
@@ -21267,7 +22842,7 @@ false,false,2866061305080595,false
 						10,
 						[
 							2,
-							"Your score is "
+							"Your score : "
 						]
 						,[
 							23,
@@ -21277,33 +22852,11 @@ false,false,2866061305080595,false
 				]
 				]
 			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			8798761118202785,
-			[
-			[
-				7,
-				cr.plugins_.Facebook.prototype.cnds.OnUserTopScoreAvailable,
-				null,
-				1,
-				false,
-				false,
-				false,
-				8522613670332208,
-				false
-			]
-			],
-			[
-			[
-				23,
+,			[
+				33,
 				cr.plugins_.Text.prototype.acts.SetText,
 				null,
-				3623214238518899,
+				9695836320802373,
 				false
 				,[
 				[
@@ -21311,49 +22864,204 @@ false,false,2866061305080595,false
 					[
 						10,
 						[
-							10,
-							[
-								20,
-								7,
-								cr.plugins_.Facebook.prototype.exps.Score,
-								false,
-								null
-							]
-							,[
-								2,
-								" "
-							]
+							2,
+							"Your ID is "
 						]
 						,[
-							2,
-							" Your Top Score"
+							20,
+							7,
+							cr.plugins_.Facebook.prototype.exps.UserID,
+							false,
+							null
 						]
 					]
 				]
 				]
 			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			8529470449269454,
-			[
-			[
-				7,
-				cr.plugins_.Facebook.prototype.cnds.OnHiscore,
+,			[
+				32,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
 				null,
-				1,
-				false,
-				false,
-				false,
-				7477949725647487,
+				4128871840726274,
 				false
+				,[
+				[
+					1,
+					[
+						2,
+						"color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"white"
+					]
+				]
+				]
 			]
-			],
-			[
+,			[
+				32,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				8758267000974955,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"background"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				32,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				907673603959215,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"border-color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				32,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				4630270865356095,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"font-size"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"17px"
+					]
+				]
+				]
+			]
+,			[
+				24,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				8633164610450097,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"white"
+					]
+				]
+				]
+			]
+,			[
+				24,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				2533272578833036,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"background"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				24,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				1008934314557355,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"border-color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				24,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				4377529578433642,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"font-size"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"17px"
+					]
+				]
+				]
+			]
 			]
 		]
 ,		[
@@ -21439,6 +23147,43 @@ false,false,2866061305080595,false
 					]
 				]
 				]
+			]
+,			[
+				7,
+				cr.plugins_.Facebook.prototype.acts.PublishToWall,
+				null,
+				4629049439856432,
+				false
+				,[
+				[
+					1,
+					[
+						10,
+						[
+							10,
+							[
+								2,
+								"I have scored "
+							]
+							,[
+								23,
+								"Score"
+							]
+						]
+						,[
+							2,
+							". Try beating my Score."
+						]
+					]
+				]
+				]
+			]
+,			[
+				24,
+				cr.plugins_.Button.prototype.acts.Destroy,
+				null,
+				6655846357474629,
+				false
 			]
 			]
 		]
@@ -21536,6 +23281,46 @@ false,false,2866061305080595,false
 			]
 			]
 		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			3120106425109655,
+			[
+			[
+				32,
+				cr.plugins_.Button.prototype.cnds.OnClicked,
+				null,
+				1,
+				false,
+				false,
+				false,
+				3127178667643481,
+				false
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.GoToLayout,
+				null,
+				5404175636102597,
+				false
+				,[
+				[
+					6,
+					"Game Screen"
+				]
+				]
+			]
+			]
+		]
+		]
+	]
+,	[
+		"Event sheet 1",
+		[
 		]
 	]
 	],
@@ -21554,7 +23339,7 @@ false,false,2866061305080595,false
 	false,
 	0,
 	0,
-	48,
+	58,
 	false,
 	true,
 	1,
