@@ -19718,6 +19718,108 @@ cr.getProjectModel = function() { return [
 		[],
 		null
 	]
+,	[
+		"t35",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		1456197542876478,
+		[],
+		null
+	]
+,	[
+		"t36",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		5969115198444426,
+		[],
+		null
+	]
+,	[
+		"t37",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		7854065441396718,
+		[],
+		null
+	]
+,	[
+		"t38",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		7213803658971756,
+		[],
+		null
+	]
+,	[
+		"t39",
+		cr.plugins_.Text,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		2029494881386083,
+		[],
+		null
+	]
+,	[
+		"t40",
+		cr.plugins_.Button,
+		false,
+		[],
+		0,
+		0,
+		null,
+		null,
+		[
+		],
+		false,
+		false,
+		4495322067588519,
+		[],
+		null
+	]
 	],
 	[
 	],
@@ -21163,6 +21265,170 @@ cr.getProjectModel = function() { return [
 			0,
 			0,
 			[
+			[
+				[244, 468, 0, 569, 1105, 0, 0, 1, 0.5, 0.5, 0, 0, []],
+				28,
+				59,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[104, 184, 0, 125.3480453491211, 188.8182678222656, 0, 0, 1, 0.5009074211120606, 0.5, 0, 0, []],
+				31,
+				60,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[109, 63, 0, 105.009651184082, 38.09173583984375, 0, 0, 1, 0.5, 0.5045045018196106, 0, 0, []],
+				30,
+				61,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[191, 48, 0, 265, 241, 0, 0, 1, 0, 0, 0, 0, []],
+				35,
+				62,
+				[
+				],
+				[
+				],
+				[
+					"Eid, a widely celebrated occasion across the world! On Eid-Ul-Adha we come together and sacrifice animals and thereby carry forth the age old ritual on the eve of Qurbani.",
+					0,
+					"bold 16pt MS Reference Sans Serif",
+					"rgb(255,255,255)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[51, 328, 0, 144, 26, 0, 0, 1, 0, 0, 0, 0, []],
+				36,
+				63,
+				[
+				],
+				[
+				],
+				[
+					"INSTRUCTION",
+					0,
+					"bold 12pt MS Reference Sans Serif",
+					"rgb(255,255,255)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[51, 357, 0, 269, 30, 0, 0, 1, 0, 0, 0, 0, []],
+				37,
+				64,
+				[
+				],
+				[
+				],
+				[
+					"Plunge in and run the cow! ",
+					0,
+					"12pt MS Reference Sans Serif",
+					"rgb(255,255,255)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[51, 390, 0, 361, 53, 0, 0, 1, 0, 0, 0, 0, []],
+				38,
+				65,
+				[
+				],
+				[
+				],
+				[
+					"Dodge the knives, and ropes from wicked butchers and thieves!",
+					0,
+					"12pt MS Reference Sans Serif",
+					"rgb(255,255,255)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[51, 438, 0, 395, 88, 0, 0, 1, 0, 0, 0, 0, []],
+				39,
+				66,
+				[
+				],
+				[
+				],
+				[
+					"Use controllers, left/right/up/down keys on the keyboard or the mouse cursor to alter directions and take your cow home, safely. ",
+					0,
+					"12pt MS Reference Sans Serif",
+					"rgb(255,255,255)",
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+,			[
+				[128, 544, 0, 223, 24, 0, 0, 1, 0, 0, 0, 0, []],
+				40,
+				67,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Back to Menu",
+					"",
+					1,
+					1,
+					1,
+					"",
+					0
+				]
+			]
 			],
 			[			]
 		]
@@ -23386,6 +23652,155 @@ false,false,2866061305080595,false
 ,	[
 		"Event sheet 1",
 		[
+		[
+			0,
+			null,
+			false,
+			null,
+			4949435566484511,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.OnLayoutStart,
+				null,
+				1,
+				false,
+				false,
+				false,
+				4853647068119767,
+				false
+			]
+			],
+			[
+			[
+				40,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				786431749475793,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"white"
+					]
+				]
+				]
+			]
+,			[
+				40,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				7675745777938721,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"background"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				40,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				3679467346346047,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"border-color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
+,			[
+				40,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				9946484353568734,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"font-size"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"17px"
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			1356213539166024,
+			[
+			[
+				40,
+				cr.plugins_.Button.prototype.cnds.OnClicked,
+				null,
+				1,
+				false,
+				false,
+				false,
+				1414964198003708,
+				false
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.GoToLayout,
+				null,
+				3803379904223264,
+				false
+				,[
+				[
+					6,
+					"Menu Screen"
+				]
+				]
+			]
+			]
+		]
 		]
 	]
 	],
@@ -23404,7 +23819,7 @@ false,false,2866061305080595,false
 	false,
 	0,
 	0,
-	59,
+	68,
 	false,
 	true,
 	1,
