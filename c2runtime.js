@@ -22827,6 +22827,29 @@ false,false,2866061305080595,false
 				]
 				]
 			]
+,			[
+				26,
+				cr.plugins_.Button.prototype.acts.SetCSSStyle,
+				null,
+				6191483820267363,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"color"
+					]
+				]
+,				[
+					1,
+					[
+						2,
+						"red"
+					]
+				]
+				]
+			]
 			]
 		]
 ,		[
