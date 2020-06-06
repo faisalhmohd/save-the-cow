@@ -3,7 +3,7 @@
 Saving the Cow with awesomeness.
 Made in collaboration with Ruchi. 
 
-[Play it!](http://faisalhmohd.github.io/save-the-cow/)
+[Play it!](https://faisalhmohd.github.io/save-the-cow/)
 
 ## Local Development
 
