@@ -1,6 +1,15 @@
-# save-the-cow
-Saving the Cow with awesomeness. Made in collaboration with Ruchi. 
+# Save The Cow
 
-[Play it!](http://theruchigame.com/)
+Saving the Cow with awesomeness.
+Made in collaboration with Ruchi. 
 
-P.S. Incase the above link goes down, you can still play it [here](http://faisalhmohd.github.io/save-the-cow/)
+[Play it!](http://faisalhmohd.github.io/save-the-cow/)
+
+## Local Development
+
+```bash
+$ yarn add global http-server
+$ http-server -S -C cert.pem -o
+
+# Go to Facebook App and add a domain of your choice. Include the same domain in /etc/hosts
+```
